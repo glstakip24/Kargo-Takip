@@ -125,7 +125,93 @@ function NewCargo({c}){
 
  async function loadNextSlot(){if(!c.wh?.id)return;let{data,error}=await supabase.rpc('next_free_slot',{p_warehouse_id:c.wh.id});if(!error)setPreviewSlot(data)}
  async function start(){setCameraErr('');try{let s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});video.current.srcObject=s;setCam(true)}catch(e){setCameraErr('Kamera açılamadı. iPhone’da HTTPS bağlantısı gerekebilir.')}}
- async function read(){setReading(true);try{let v=video.current,cn=canvas.current,w=v.videoWidth,h=v.videoHeight,bw=w*.78,bh=h*.18,sx=(w-bw)/2,sy=(h-bh)/2;cn.width=bw;cn.height=bh;cn.getContext('2d').drawImage(v,sx,sy,bw,bh,0,0,bw,bh);let r=await Tesseract.recognize(cn,'tur+deu+eng');setName(tc((r.data.text.split('\n').map(x=>x.trim()).filter(Boolean)[0]||'')))}finally{setReading(false)}}
+ async function read(){
+ setReading(true);
+ try{
+  let v=video.current,cn=canvas.current,w=v.videoWidth,h=v.videoHeight;
+
+  if(!v||!w||!h){
+   c.setMsg('Kamera görüntüsü alınamadı. Lütfen kamerayı tekrar açın.');
+   return;
+  }
+
+  cn.width=w;
+  cn.height=h;
+  let ctx=cn.getContext('2d');
+  ctx.drawImage(v,0,0,w,h);
+
+  let r=await Tesseract.recognize(cn,'tur+deu+eng');
+  let rawText=r.data.text||'';
+
+  function normalizeLine(x){
+   return (x||'')
+    .replace(/\|/g,'I')
+    .replace(/Shop\s*Delivery\s*Service/gi,'ShopDeliveryService')
+    .replace(/ShopDeliveryServıce/gi,'ShopDeliveryService')
+    .replace(/ShopDelıveryService/gi,'ShopDeliveryService')
+    .replace(/\s+/g,' ')
+    .trim();
+  }
+
+  let lines=rawText
+   .split(/\r?\n/)
+   .map(normalizeLine)
+   .filter(Boolean);
+
+  let shopIndex=lines.findIndex(line=>{
+   let clean=line.replace(/\s+/g,'').toLowerCase();
+   return clean.includes('shopdeliveryservice') ||
+          clean.includes('shopdelıveryservice') ||
+          clean.includes('shopdeliveryservıce') ||
+          clean.includes('shopdeliveryservlce');
+  });
+
+  if(shopIndex===-1){
+   setName('');
+   c.setMsg('ShopDeliveryService bulunamadı. Lütfen tüm etiketi kameraya tam olarak alın.');
+   return;
+  }
+
+  let nameLine='';
+  let sameLine=lines[shopIndex]||'';
+  let sameMatch=sameLine.match(/c\s*\/\s*o\s+(.+)/i);
+
+  if(sameMatch&&sameMatch[1]){
+   nameLine=sameMatch[1];
+  }else{
+   for(let i=shopIndex+1;i<Math.min(lines.length,shopIndex+5);i++){
+    let candidate=lines[i]||'';
+    if(/^(myflexbox|industriestra|strasse|straße|at\s*-|de\s*-|[0-9]{4,}|shopdeliveryservice)/i.test(candidate))continue;
+    nameLine=candidate;
+    break;
+   }
+  }
+
+  nameLine=nameLine
+   .replace(/^c\s*\/\s*o\s*/i,'')
+   .replace(/^c\s*o\s*/i,'')
+   .replace(/^cio\s*/i,'')
+   .replace(/^c0\s*/i,'')
+   .replace(/[^A-Za-zÀ-ž\s.'-]/g,'')
+   .replace(/\s+/g,' ')
+   .trim();
+
+  if(!nameLine||nameLine.length<3){
+   setName('');
+   c.setMsg('İsim satırı okunamadı. ShopDeliveryService altındaki c/o isim kısmı net görünmeli.');
+   return;
+  }
+
+  let finalName=tc(nameLine);
+  setName(finalName);
+  c.setMsg('İsim okundu: '+finalName);
+
+ }catch(e){
+  c.setMsg('Okuma hatası: '+e.message);
+ }finally{
+  setReading(false);
+ }
+}
  async function save(){
   let clean=tc(name);if(!clean)return c.setMsg('İsim boş olamaz');
   let dup=c.active.find(x=>x.recipient_name.toLocaleLowerCase('tr-TR')===clean.toLocaleLowerCase('tr-TR'));if(dup&&!confirm(`Bu isimde aktif kargo var.\nNo: ${dup.slot_no}\nYine de kaydet?`))return;
