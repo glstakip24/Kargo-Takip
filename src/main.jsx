@@ -135,10 +135,16 @@ function NewCargo({c}){
    return;
   }
 
-  cn.width=w;
-  cn.height=h;
-  let ctx=cn.getContext('2d');
-  ctx.drawImage(v,0,0,w,h);
+  let cropX = Math.floor(w * 0.05);
+let cropY = Math.floor(h * 0.38);
+let cropW = Math.floor(w * 0.90);
+let cropH = Math.floor(h * 0.28);
+
+cn.width = cropW;
+cn.height = cropH;
+
+let ctx = cn.getContext('2d');
+ctx.drawImage(v, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
   let r=await Tesseract.recognize(cn,'tur+deu+eng');
   let rawText=r.data.text||'';
